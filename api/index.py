@@ -14,7 +14,10 @@ import traceback
 import requests
 from urllib.parse import urlparse
 import tempfile
+import re
+from bs4 import BeautifulSoup
 import numpy as np
+from sklearn.linear_model import LinearRegression
 
 app = Flask(__name__)
 
@@ -24,268 +27,99 @@ openai.api_base = os.getenv('OPENAI_BASE_URL', 'https://aipipe.org/openai/v1')
 
 class DataAnalyst:
     def __init__(self):
-        self.supported_formats = ['.csv', '.json', '.xlsx', '.xls', '.txt']
+        pass
         
     def analyze_task(self, task_description):
-        """Main method to analyze a data task"""
+        """Main method to analyze a data task and return only the requested answer"""
         try:
-            # Parse the task using LLM
-            analysis_plan = self._create_analysis_plan(task_description)
+            # Use LLM to understand the task and generate code
+            code = self._generate_analysis_code(task_description)
             
-            # Execute the analysis
-            result = self._execute_analysis(analysis_plan, task_description)
+            # Execute the generated code safely
+            result = self._execute_code(code)
             
-            return {
-                "status": "success",
-                "timestamp": datetime.now().isoformat(),
-                "task": task_description,
-                "analysis_plan": analysis_plan,
-                "result": result
-            }
+            return result
             
         except Exception as e:
-            return {
-                "status": "error",
-                "timestamp": datetime.now().isoformat(),
-                "error": str(e),
-                "traceback": traceback.format_exc()
-            }
+            return {"error": str(e), "traceback": traceback.format_exc()}
     
-    def _create_analysis_plan(self, task_description):
-        """Use LLM to create an analysis plan"""
+    def _generate_analysis_code(self, task_description):
+        """Generate Python code to solve the analysis task"""
         prompt = f"""
-        You are a data analyst AI. Given the following task description, create a structured analysis plan.
-        
-        Task: {task_description}
-        
-        Please analyze what type of data analysis is needed and respond with a JSON structure containing:
-        - data_requirements: What kind of data is needed
-        - analysis_type: Type of analysis (descriptive, predictive, diagnostic, etc.)
-        - steps: List of analysis steps
-        - visualization_needs: What visualizations would be helpful
-        - expected_output: What the final output should contain
-        
-        Respond only with valid JSON.
-        """
+You are a Python data analyst. Generate ONLY executable Python code that directly answers the task.
+
+Available imports:
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import requests
+from bs4 import BeautifulSoup
+import base64
+import io
+from sklearn.linear_model import LinearRegression
+import json
+import re
+
+Task: {task_description}
+
+Requirements:
+1. Write code that directly produces the final answer
+2. If the task asks for multiple answers, return them as a JSON array
+3. For plots, save as base64 data URI: "data:image/png;base64,..."
+4. Keep plots under 100KB by using plt.figure(figsize=(8,6), dpi=72)
+5. End with: result = [answer1, answer2, ...]
+6. NO explanations, NO print statements, ONLY code
+
+Example for multiple answers:
+result = [count, "movie_name", correlation_value, "data:image/png;base64,iVBORw0..."]
+"""
         
         response = openai.ChatCompletion.create(
-            model="gpt-4",
+            model="gpt-3.5-turbo",
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.3
+            temperature=0.1
         )
         
-        try:
-            return json.loads(response.choices[0].message.content)
-        except json.JSONDecodeError:
-            # Fallback if JSON parsing fails
-            return {
-                "data_requirements": "General dataset",
-                "analysis_type": "descriptive",
-                "steps": ["Load data", "Analyze data", "Create visualizations"],
-                "visualization_needs": ["Summary statistics", "Basic plots"],
-                "expected_output": "Analysis summary with insights"
-            }
+        return response.choices[0].message.content
     
-    def _execute_analysis(self, plan, task_description):
-        """Execute the analysis based on the plan"""
-        # For this example, we'll generate sample data and perform analysis
-        # In a real implementation, this would handle actual data sources
-        
-        # Generate or load sample data based on the task
-        data = self._get_sample_data(task_description)
-        
-        # Perform analysis
-        analysis_results = self._perform_statistical_analysis(data)
-        
-        # Create visualizations
-        visualizations = self._create_visualizations(data)
-        
-        # Generate insights using LLM
-        insights = self._generate_insights(data, analysis_results, task_description)
-        
-        return {
-            "data_summary": self._summarize_data(data),
-            "statistical_analysis": analysis_results,
-            "visualizations": visualizations,
-            "insights": insights,
-            "recommendations": self._generate_recommendations(insights, task_description)
+    def _execute_code(self, code):
+        """Safely execute the generated code and return result"""
+        # Create a safe execution environment
+        safe_globals = {
+            '__builtins__': __builtins__,
+            'pd': pd,
+            'np': np,
+            'plt': plt,
+            'requests': requests,
+            'BeautifulSoup': BeautifulSoup,
+            'base64': base64,
+            'io': io,
+            'LinearRegression': LinearRegression,
+            'json': json,
+            're': re,
+            'range': range,
+            'len': len,
+            'str': str,
+            'int': int,
+            'float': float,
+            'list': list,
+            'dict': dict,
+            'enumerate': enumerate,
+            'zip': zip,
+            'max': max,
+            'min': min,
+            'sum': sum,
+            'sorted': sorted,
         }
+        
+        safe_locals = {}
+        
+        # Execute the code
+        exec(code, safe_globals, safe_locals)
+        
+        # Return the result
+        return safe_locals.get('result', 'No result variable found')
     
-    def _get_sample_data(self, task_description):
-        """Generate appropriate sample data based on task description"""
-        # This is a simplified example - in reality, you'd connect to data sources
-        import numpy as np
-        
-        # Generate different types of sample data based on keywords in task
-        if any(word in task_description.lower() for word in ['sales', 'revenue', 'profit']):
-            # Sales data
-            dates = pd.date_range('2023-01-01', periods=100, freq='D')
-            data = pd.DataFrame({
-                'date': dates,
-                'sales': np.random.normal(1000, 200, 100),
-                'profit': np.random.normal(150, 50, 100),
-                'customers': np.random.poisson(50, 100)
-            })
-        elif any(word in task_description.lower() for word in ['temperature', 'weather', 'climate']):
-            # Weather data
-            dates = pd.date_range('2023-01-01', periods=365, freq='D')
-            data = pd.DataFrame({
-                'date': dates,
-                'temperature': np.random.normal(20, 10, 365),
-                'humidity': np.random.normal(60, 15, 365),
-                'rainfall': np.random.exponential(2, 365)
-            })
-        else:
-            # Generic numeric data
-            data = pd.DataFrame({
-                'category': ['A', 'B', 'C', 'D', 'E'] * 20,
-                'value1': np.random.normal(100, 25, 100),
-                'value2': np.random.normal(50, 15, 100),
-                'count': np.random.poisson(10, 100)
-            })
-        
-        return data
-    
-    def _perform_statistical_analysis(self, data):
-        """Perform statistical analysis on the data"""
-        numeric_columns = data.select_dtypes(include=[np.number]).columns
-        
-        analysis = {}
-        for col in numeric_columns:
-            analysis[col] = {
-                'mean': float(data[col].mean()),
-                'median': float(data[col].median()),
-                'std': float(data[col].std()),
-                'min': float(data[col].min()),
-                'max': float(data[col].max()),
-                'count': int(data[col].count())
-            }
-        
-        # Correlation analysis if multiple numeric columns
-        if len(numeric_columns) > 1:
-            correlation_matrix = data[numeric_columns].corr()
-            analysis['correlations'] = correlation_matrix.to_dict()
-        
-        return analysis
-    
-    def _create_visualizations(self, data):
-        """Create visualizations and return as base64 encoded images"""
-        visualizations = []
-        
-        try:
-            numeric_columns = data.select_dtypes(include=[np.number]).columns
-            
-            # Create histogram for first numeric column
-            if len(numeric_columns) > 0:
-                plt.figure(figsize=(10, 6))
-                plt.hist(data[numeric_columns[0]], bins=20, alpha=0.7)
-                plt.title(f'Distribution of {numeric_columns[0]}')
-                plt.xlabel(numeric_columns[0])
-                plt.ylabel('Frequency')
-                
-                # Convert to base64
-                buffer = io.BytesIO()
-                plt.savefig(buffer, format='png', bbox_inches='tight', dpi=150)
-                buffer.seek(0)
-                image_base64 = base64.b64encode(buffer.read()).decode()
-                plt.close()
-                
-                visualizations.append({
-                    'type': 'histogram',
-                    'title': f'Distribution of {numeric_columns[0]}',
-                    'image': image_base64
-                })
-            
-            # Create correlation heatmap if multiple numeric columns
-            if len(numeric_columns) > 1:
-                plt.figure(figsize=(10, 8))
-                correlation_matrix = data[numeric_columns].corr()
-                sns.heatmap(correlation_matrix, annot=True, cmap='coolwarm', center=0)
-                plt.title('Correlation Matrix')
-                
-                buffer = io.BytesIO()
-                plt.savefig(buffer, format='png', bbox_inches='tight', dpi=150)
-                buffer.seek(0)
-                image_base64 = base64.b64encode(buffer.read()).decode()
-                plt.close()
-                
-                visualizations.append({
-                    'type': 'heatmap',
-                    'title': 'Correlation Matrix',
-                    'image': image_base64
-                })
-                
-        except Exception as e:
-            visualizations.append({
-                'type': 'error',
-                'message': f'Error creating visualization: {str(e)}'
-            })
-        
-        return visualizations
-    
-    def _generate_insights(self, data, analysis_results, task_description):
-        """Generate insights using LLM"""
-        data_summary = self._summarize_data(data)
-        
-        prompt = f"""
-        As a data analyst, provide insights based on the following data analysis:
-        
-        Original Task: {task_description}
-        
-        Data Summary: {json.dumps(data_summary, indent=2)}
-        
-        Statistical Analysis: {json.dumps(analysis_results, indent=2)}
-        
-        Please provide:
-        1. Key findings from the data
-        2. Notable patterns or trends
-        3. Potential anomalies or interesting observations
-        4. Implications of the findings
-        
-        Keep the response concise but insightful.
-        """
-        
-        try:
-            response = openai.ChatCompletion.create(
-                model="gpt-4",
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.5
-            )
-            return response.choices[0].message.content
-        except Exception as e:
-            return f"Unable to generate insights due to API error: {str(e)}"
-    
-    def _generate_recommendations(self, insights, task_description):
-        """Generate recommendations using LLM"""
-        prompt = f"""
-        Based on the following insights and original task, provide actionable recommendations:
-        
-        Original Task: {task_description}
-        Insights: {insights}
-        
-        Please provide 3-5 specific, actionable recommendations.
-        """
-        
-        try:
-            response = openai.ChatCompletion.create(
-                model="gpt-4",
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.5
-            )
-            return response.choices[0].message.content
-        except Exception as e:
-            return f"Unable to generate recommendations due to API error: {str(e)}"
-    
-    def _summarize_data(self, data):
-        """Create a summary of the dataset"""
-        return {
-            'shape': list(data.shape),
-            'columns': list(data.columns),
-            'dtypes': {col: str(dtype) for col, dtype in data.dtypes.items()},
-            'missing_values': data.isnull().sum().to_dict(),
-            'memory_usage': f"{data.memory_usage(deep=True).sum() / 1024:.2f} KB"
-        }
-
 # Initialize the data analyst
 analyst = DataAnalyst()
 
@@ -293,12 +127,12 @@ analyst = DataAnalyst()
 def home():
     return jsonify({
         "message": "Data Analyst Agent API",
-        "version": "1.0.0",
+        "version": "2.0.0",
         "endpoints": {
             "POST /api/": "Submit data analysis task",
             "GET /": "API information"
         },
-        "usage": "Send POST request with task description in request body"
+        "usage": "Send POST request with task description. Returns direct answer only."
     })
 
 @app.route('/api/', methods=['POST'])
@@ -319,37 +153,23 @@ def analyze_data():
                 task_description = request.get_data(as_text=True)
         
         if not task_description:
-            return jsonify({
-                "status": "error",
-                "message": "No task description provided"
-            }), 400
+            return jsonify({"error": "No task description provided"}), 400
         
-        # Perform analysis
+        # Perform analysis and get direct result
         result = analyst.analyze_task(task_description)
         
         return jsonify(result)
         
     except Exception as e:
-        return jsonify({
-            "status": "error",
-            "message": str(e),
-            "traceback": traceback.format_exc()
-        }), 500
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/about')
 def about():
     return jsonify({
         "name": "Data Analyst Agent",
-        "description": "AI-powered data analysis API that can source, prepare, analyze, and visualize data",
-        "capabilities": [
-            "Task interpretation and planning",
-            "Statistical analysis",
-            "Data visualization",
-            "Insight generation",
-            "Recommendation generation"
-        ],
-        "supported_formats": [".csv", ".json", ".xlsx", ".txt"],
-        "response_time": "< 3 minutes"
+        "description": "AI-powered data analysis API that returns direct answers only",
+        "model": "gpt-3.5-turbo",
+        "response_format": "Direct answer only - no metadata or process details"
     })
 
 if __name__ == '__main__':
