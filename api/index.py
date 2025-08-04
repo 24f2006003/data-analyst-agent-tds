@@ -38,11 +38,14 @@ def execute_code(code):
     
     code = code.strip()
     
+    # Import numpy if needed
+    import numpy as np
+    
     globals_dict = {
         'requests': requests, 'json': json, 'base64': base64, 'io': io, 'plt': plt,
         'range': range, 'len': len, 'str': str, 'int': int, 'float': float, 'list': list,
         'dict': dict, 'sum': sum, 'max': max, 'min': min, 'sorted': sorted, 'enumerate': enumerate,
-        're': __import__('re'), 'BeautifulSoup': None
+        're': __import__('re'), 'BeautifulSoup': None, 'np': np
     }
     
     # Try to import BeautifulSoup if needed
@@ -81,25 +84,32 @@ def analyze():
         
         code = call_llm(f"""Task: {task}
 
-Write Python code to solve this. Available modules: requests, json, base64, io, plt, re
+Write Python code. Available: requests, json, base64, io, plt, re, np (numpy)
 
-For matplotlib plots, convert to base64:
+For web scraping, use requests + regex or string parsing (no BeautifulSoup). 
+For correlations, use: correlation = np.corrcoef(x, y)[0, 1]
+For plots:
 ```
 buffer = io.BytesIO()
 plt.savefig(buffer, format='png', dpi=72, bbox_inches='tight')
 buffer.seek(0)
 img = base64.b64encode(buffer.read()).decode()
 plt.close()
-result = "data:image/png;base64," + img
 ```
 
-For multiple answers: result = [answer1, answer2, ...]
-End with: result = your_final_answer
+Important: Check if lists are not empty before using them. Handle missing data.
+End with: result = [answer1, answer2, ...]
 
-Only executable Python code:""")
+Only Python code:""")
         
         result = execute_code(code)
-        return jsonify(result)
+        
+        # If result is an error dict, return it as is for debugging
+        if isinstance(result, dict) and "error" in result:
+            return jsonify(result), 500
+        
+        # Return the direct result without wrapping
+        return result
         
     except Exception as e:
         return jsonify({"error": str(e)}), 500
