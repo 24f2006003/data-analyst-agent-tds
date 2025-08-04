@@ -1,5 +1,10 @@
 from flask import Flask, request, jsonify
 import os
+import tempfile
+
+# Fix matplotlib cache directory issue in serverless environments
+os.environ['MPLCONFIGDIR'] = tempfile.mkdtemp()
+
 import openai
 import pandas as pd
 import json
@@ -13,7 +18,6 @@ from datetime import datetime
 import traceback
 import requests
 from urllib.parse import urlparse
-import tempfile
 import re
 from bs4 import BeautifulSoup
 import numpy as np
