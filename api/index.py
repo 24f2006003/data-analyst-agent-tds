@@ -14,6 +14,7 @@ import traceback
 import requests
 from urllib.parse import urlparse
 import tempfile
+import numpy as np
 
 app = Flask(__name__)
 
