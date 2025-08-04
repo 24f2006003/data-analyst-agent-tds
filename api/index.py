@@ -1,16 +1,13 @@
 from flask import Flask, request, jsonify
 import os
 import tempfile
-os.environ['MPLCONFIGDIR'] = tempfile.mkdtemp()
-
 import requests
 import json
 import base64
 import io
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
 import traceback
+import re
+import math
 
 app = Flask(__name__)
 
@@ -29,8 +26,56 @@ def call_llm(prompt):
     except Exception as e:
         return f"# Error calling LLM: {e}\nresult = 'LLM Error'"
 
+def simple_plot_to_base64(x_data, y_data, title="Plot", x_label="X", y_label="Y", regression=False):
+    """Create a simple SVG plot and convert to base64"""
+    if not x_data or not y_data or len(x_data) != len(y_data):
+        return "data:image/svg+xml;base64," + base64.b64encode(b'<svg><text>No data</text></svg>').decode()
+    
+    # Simple SVG plot
+    width, height = 400, 300
+    margin = 50
+    
+    x_min, x_max = min(x_data), max(x_data)
+    y_min, y_max = min(y_data), max(y_data)
+    
+    # Scale data to fit in plot area
+    def scale_x(x): return margin + (x - x_min) / (x_max - x_min) * (width - 2*margin) if x_max != x_min else margin
+    def scale_y(y): return height - margin - (y - y_min) / (y_max - y_min) * (height - 2*margin) if y_max != y_min else height - margin
+    
+    svg = f'<svg width="{width}" height="{height}" xmlns="http://www.w3.org/2000/svg">'
+    svg += f'<rect width="{width}" height="{height}" fill="white"/>'
+    
+    # Plot points
+    for x, y in zip(x_data, y_data):
+        sx, sy = scale_x(x), scale_y(y)
+        svg += f'<circle cx="{sx}" cy="{sy}" r="3" fill="blue"/>'
+    
+    # Regression line if requested
+    if regression and len(x_data) > 1:
+        # Simple linear regression
+        n = len(x_data)
+        sum_x = sum(x_data)
+        sum_y = sum(y_data)
+        sum_xy = sum(x*y for x, y in zip(x_data, y_data))
+        sum_x2 = sum(x*x for x in x_data)
+        
+        slope = (n*sum_xy - sum_x*sum_y) / (n*sum_x2 - sum_x*sum_x) if (n*sum_x2 - sum_x*sum_x) != 0 else 0
+        intercept = (sum_y - slope*sum_x) / n
+        
+        x1, x2 = x_min, x_max
+        y1, y2 = slope*x1 + intercept, slope*x2 + intercept
+        
+        sx1, sy1 = scale_x(x1), scale_y(y1)
+        sx2, sy2 = scale_x(x2), scale_y(y2)
+        
+        svg += f'<line x1="{sx1}" y1="{sy1}" x2="{sx2}" y2="{sy2}" stroke="red" stroke-dasharray="5,5"/>'
+    
+    svg += '</svg>'
+    
+    return "data:image/svg+xml;base64," + base64.b64encode(svg.encode()).decode()
+
 def execute_code(code):
-    # Clean the code - remove markdown formatting if present
+    # Clean the code
     if "```python" in code:
         code = code.split("```python")[1].split("```")[0]
     elif "```" in code:
@@ -38,23 +83,12 @@ def execute_code(code):
     
     code = code.strip()
     
-    # Import numpy if needed
-    import numpy as np
-    
     globals_dict = {
-        'requests': requests, 'json': json, 'base64': base64, 'io': io, 'plt': plt,
+        'requests': requests, 'json': json, 'base64': base64, 'io': io, 're': re,
         'range': range, 'len': len, 'str': str, 'int': int, 'float': float, 'list': list,
         'dict': dict, 'sum': sum, 'max': max, 'min': min, 'sorted': sorted, 'enumerate': enumerate,
-        're': __import__('re'), 'BeautifulSoup': None, 'np': np
+        'math': math, 'simple_plot_to_base64': simple_plot_to_base64
     }
-    
-    # Try to import BeautifulSoup if needed
-    if 'BeautifulSoup' in code:
-        try:
-            from bs4 import BeautifulSoup
-            globals_dict['BeautifulSoup'] = BeautifulSoup
-        except:
-            pass
     
     locals_dict = {}
     
@@ -84,31 +118,26 @@ def analyze():
         
         code = call_llm(f"""Task: {task}
 
-Write Python code. Available: requests, json, base64, io, plt, re, np (numpy)
+Write Python code. Available: requests, json, base64, io, re, math, simple_plot_to_base64
 
-For web scraping, use requests + regex or string parsing (no BeautifulSoup). 
-For correlations, use: correlation = np.corrcoef(x, y)[0, 1]
-For plots:
-```
-buffer = io.BytesIO()
-plt.savefig(buffer, format='png', dpi=72, bbox_inches='tight')
-buffer.seek(0)
-img = base64.b64encode(buffer.read()).decode()
-plt.close()
-```
+For web scraping: use requests + regex/string parsing
+For correlation: calculate manually or use math functions
+For plots: use simple_plot_to_base64(x_data, y_data, title, x_label, y_label, regression=True/False)
 
-Important: Check if lists are not empty before using them. Handle missing data.
-End with: result = [answer1, answer2, ...]
+Example plot usage:
+x_data = [1, 2, 3, 4, 5]
+y_data = [2, 4, 1, 5, 3]
+plot_img = simple_plot_to_base64(x_data, y_data, "Scatter Plot", "X", "Y", regression=True)
+
+End with: result = [answer1, answer2, plot_img, ...]
 
 Only Python code:""")
         
         result = execute_code(code)
         
-        # If result is an error dict, return it as is for debugging
         if isinstance(result, dict) and "error" in result:
             return jsonify(result), 500
         
-        # Return the direct result without wrapping
         return result
         
     except Exception as e:
