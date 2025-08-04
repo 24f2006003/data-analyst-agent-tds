@@ -122,19 +122,32 @@ def analyze():
 
 Write Python code. Available: requests, json, base64, io, re, math, simple_plot_to_base64
 
-For web scraping: use requests + regex/string parsing
-For correlation: calculate manually or use math functions
-For plots: use simple_plot_to_base64(x_data, y_data, title, x_label, y_label, regression=True/False)
+For web scraping: 
+- Use requests.get(url, headers={{'User-Agent': 'Mozilla/5.0'}})
+- Use multiple regex patterns or string splitting for data extraction
+- Always check if regex matches exist before using .group()
+- Handle missing data gracefully
 
-Example plot usage:
-x_data = [1, 2, 3, 4, 5]
-y_data = [2, 4, 1, 5, 3]
-plot_img = simple_plot_to_base64(x_data, y_data, "Scatter Plot", "X", "Y", regression=True)
+For correlation: 
+def correlation(x, y):
+    n = len(x)
+    if n < 2: return 0
+    sum_x = sum(x)
+    sum_y = sum(y) 
+    sum_xy = sum(a*b for a,b in zip(x,y))
+    sum_x2 = sum(a*a for a in x)
+    sum_y2 = sum(b*b for b in y)
+    num = n*sum_xy - sum_x*sum_y
+    den = ((n*sum_x2 - sum_x*sum_x) * (n*sum_y2 - sum_y*sum_y))**0.5
+    return num/den if den != 0 else 0
 
-End with: result = [answer1, answer2, plot_img, ...]
+For plots: simple_plot_to_base64(x_data, y_data, "Title", "X", "Y", regression=True)
+
+Important: Check for None/empty results, use try/except, handle errors
+End with: result = [answer1, answer2, answer3, plot_base64]
 
 Only Python code:""")
-        
+
         result = execute_code(code)
         
         # Always return the result directly, no JSON wrapping
