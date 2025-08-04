@@ -1,0 +1,43 @@
+# Exclude cache and temporary files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Exclude development files
+.env
+.venv
+venv/
+env/
+ENV/
+.git/
+.gitignore
+*.log
+.DS_Store
+
+# Exclude documentation and examples
+README.md
+*.md
+docs/
+examples/
+tests/
+test_*
+
+# Exclude IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Exclude large unnecessary packages
+site-packages/matplotlib/tests/
+site-packages/pandas/tests/
+site-packages/numpy/tests/
+site-packages/sklearn/tests/
+site-packages/*/test*/
+site-packages/*/tests/
