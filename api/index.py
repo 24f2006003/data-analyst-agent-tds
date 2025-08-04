@@ -94,9 +94,11 @@ def execute_code(code):
     
     try:
         exec(code, globals_dict, locals_dict)
-        return locals_dict.get('result', 'No result variable found')
+        result = locals_dict.get('result', 'No result variable found')
+        return result
     except Exception as e:
-        return {"error": f"Code execution failed: {str(e)}", "code": code}
+        # Return a generic error message instead of code
+        return f"Error: {str(e)}"
 
 @app.route('/')
 def home():
@@ -114,7 +116,7 @@ def analyze():
                 task = request.get_data(as_text=True)
         
         if not task.strip():
-            return jsonify({"error": "No task provided"}), 400
+            return "Error: No task provided"
         
         code = call_llm(f"""Task: {task}
 
@@ -135,13 +137,11 @@ Only Python code:""")
         
         result = execute_code(code)
         
-        if isinstance(result, dict) and "error" in result:
-            return jsonify(result), 500
-        
+        # Always return the result directly, no JSON wrapping
         return result
         
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return f"Error: {str(e)}"
 
 if __name__ == '__main__':
     app.run(debug=True)
