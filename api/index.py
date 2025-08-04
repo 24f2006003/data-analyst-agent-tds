@@ -18,22 +18,48 @@ OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 OPENAI_BASE_URL = os.getenv('OPENAI_BASE_URL', 'https://aipipe.org/openai/v1')
 
 def call_llm(prompt):
-    response = requests.post(
-        f"{OPENAI_BASE_URL}/chat/completions",
-        headers={"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"},
-        json={"model": "gpt-3.5-turbo", "messages": [{"role": "user", "content": prompt}], "temperature": 0.1}
-    )
-    return response.json()["choices"][0]["message"]["content"]
+    try:
+        response = requests.post(
+            f"{OPENAI_BASE_URL}/chat/completions",
+            headers={"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"},
+            json={"model": "gpt-3.5-turbo", "messages": [{"role": "user", "content": prompt}], "temperature": 0.1},
+            timeout=60
+        )
+        return response.json()["choices"][0]["message"]["content"]
+    except Exception as e:
+        return f"# Error calling LLM: {e}\nresult = 'LLM Error'"
 
 def execute_code(code):
+    # Clean the code - remove markdown formatting if present
+    if "```python" in code:
+        code = code.split("```python")[1].split("```")[0]
+    elif "```" in code:
+        code = code.split("```")[1].split("```")[0]
+    
+    code = code.strip()
+    
     globals_dict = {
         'requests': requests, 'json': json, 'base64': base64, 'io': io, 'plt': plt,
         'range': range, 'len': len, 'str': str, 'int': int, 'float': float, 'list': list,
-        'dict': dict, 'sum': sum, 'max': max, 'min': min, 'sorted': sorted, 'enumerate': enumerate
+        'dict': dict, 'sum': sum, 'max': max, 'min': min, 'sorted': sorted, 'enumerate': enumerate,
+        're': __import__('re'), 'BeautifulSoup': None
     }
+    
+    # Try to import BeautifulSoup if needed
+    if 'BeautifulSoup' in code:
+        try:
+            from bs4 import BeautifulSoup
+            globals_dict['BeautifulSoup'] = BeautifulSoup
+        except:
+            pass
+    
     locals_dict = {}
-    exec(code, globals_dict, locals_dict)
-    return locals_dict.get('result', 'No result')
+    
+    try:
+        exec(code, globals_dict, locals_dict)
+        return locals_dict.get('result', 'No result variable found')
+    except Exception as e:
+        return {"error": f"Code execution failed: {str(e)}", "code": code}
 
 @app.route('/')
 def home():
@@ -53,22 +79,24 @@ def analyze():
         if not task.strip():
             return jsonify({"error": "No task provided"}), 400
         
-        code = call_llm(f"""Generate Python code to solve: {task}
+        code = call_llm(f"""Task: {task}
 
-Available: requests, json, base64, io, plt (matplotlib.pyplot)
+Write Python code to solve this. Available modules: requests, json, base64, io, plt, re
 
-For plots: 
+For matplotlib plots, convert to base64:
+```
 buffer = io.BytesIO()
 plt.savefig(buffer, format='png', dpi=72, bbox_inches='tight')
 buffer.seek(0)
 img = base64.b64encode(buffer.read()).decode()
 plt.close()
+result = "data:image/png;base64," + img
+```
 
-End with: result = your_answer
-Single answer: result = 42
-Multiple: result = [1, "name", 0.85, "data:image/png;base64,"+img]
+For multiple answers: result = [answer1, answer2, ...]
+End with: result = your_final_answer
 
-Code only:""")
+Only executable Python code:""")
         
         result = execute_code(code)
         return jsonify(result)
