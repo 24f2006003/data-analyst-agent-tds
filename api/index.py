@@ -1,104 +1,68 @@
 from flask import Flask, request, jsonify
-import os
-import tempfile
+import os, io, re, math, json, base64
 import requests
-import json
-import base64
-import io
-import traceback
-import re
-import math
+import matplotlib.pyplot as plt
+from transformers import pipeline
+import torch
 
 app = Flask(__name__)
 
-OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
-OPENAI_BASE_URL = os.getenv('OPENAI_BASE_URL', 'https://aipipe.org/openai/v1')
+# Load model pipeline once
+pipe = pipeline(
+    "text-generation",
+    model="openai/gpt-oss-20b",
+    torch_dtype="auto",
+    device_map="auto"
+)
 
 def call_llm(prompt):
     try:
-        response = requests.post(
-            f"{OPENAI_BASE_URL}/chat/completions",
-            headers={"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"},
-            json={"model": "gpt-3.5-turbo", "messages": [{"role": "user", "content": prompt}], "temperature": 0.1},
-            timeout=60
-        )
-        return response.json()["choices"][0]["message"]["content"]
+        messages = [{"role": "user", "content": prompt}]
+        outputs = pipe(messages, max_new_tokens=400)
+        return outputs[0]["generated_text"]
     except Exception as e:
-        return f"# Error calling LLM: {e}\nresult = 'LLM Error'"
+        return f"result = {{'error': 'LLM Error: {str(e)}'}}"
 
-def simple_plot_to_base64(x_data, y_data, title="Plot", x_label="X", y_label="Y", regression=False):
-    """Create a simple SVG plot and convert to base64"""
-    if not x_data or not y_data or len(x_data) != len(y_data):
-        return "data:image/svg+xml;base64," + base64.b64encode(b'<svg><text>No data</text></svg>').decode()
-    
-    # Simple SVG plot
-    width, height = 400, 300
-    margin = 50
-    
-    x_min, x_max = min(x_data), max(x_data)
-    y_min, y_max = min(y_data), max(y_data)
-    
-    # Scale data to fit in plot area
-    def scale_x(x): return margin + (x - x_min) / (x_max - x_min) * (width - 2*margin) if x_max != x_min else margin
-    def scale_y(y): return height - margin - (y - y_min) / (y_max - y_min) * (height - 2*margin) if y_max != y_min else height - margin
-    
-    svg = f'<svg width="{width}" height="{height}" xmlns="http://www.w3.org/2000/svg">'
-    svg += f'<rect width="{width}" height="{height}" fill="white"/>'
-    
-    # Plot points
-    for x, y in zip(x_data, y_data):
-        sx, sy = scale_x(x), scale_y(y)
-        svg += f'<circle cx="{sx}" cy="{sy}" r="3" fill="blue"/>'
-    
-    # Regression line if requested
-    if regression and len(x_data) > 1:
-        # Simple linear regression
-        n = len(x_data)
-        sum_x = sum(x_data)
-        sum_y = sum(y_data)
-        sum_xy = sum(x*y for x, y in zip(x_data, y_data))
-        sum_x2 = sum(x*x for x in x_data)
-        
-        slope = (n*sum_xy - sum_x*sum_y) / (n*sum_x2 - sum_x*sum_x) if (n*sum_x2 - sum_x*sum_x) != 0 else 0
-        intercept = (sum_y - slope*sum_x) / n
-        
-        x1, x2 = x_min, x_max
-        y1, y2 = slope*x1 + intercept, slope*x2 + intercept
-        
-        sx1, sy1 = scale_x(x1), scale_y(y1)
-        sx2, sy2 = scale_x(x2), scale_y(y2)
-        
-        svg += f'<line x1="{sx1}" y1="{sy1}" x2="{sx2}" y2="{sy2}" stroke="red" stroke-dasharray="5,5"/>'
-    
-    svg += '</svg>'
-    
-    return "data:image/svg+xml;base64," + base64.b64encode(svg.encode()).decode()
+def simple_plot_to_base64(x, y, title="Plot", x_label="X", y_label="Y", regression=False):
+    if not x or not y or len(x) != len(y):
+        return ""
+
+    fig, ax = plt.subplots()
+    ax.scatter(x, y, color='blue')
+    ax.set_title(title)
+    ax.set_xlabel(x_label)
+    ax.set_ylabel(y_label)
+
+    if regression and len(x) > 1:
+        n, sum_x, sum_y = len(x), sum(x), sum(y)
+        sum_xy, sum_x2 = sum(a*b for a, b in zip(x, y)), sum(a*a for a in x)
+        denom = n * sum_x2 - sum_x * sum_x
+        slope = (n * sum_xy - sum_x * sum_y) / denom if denom else 0
+        intercept = (sum_y - slope * sum_x) / n
+        x_line = [min(x), max(x)]
+        y_line = [slope * xi + intercept for xi in x_line]
+        ax.plot(x_line, y_line, linestyle='--', color='red')
+
+    buf = io.BytesIO()
+    fig.savefig(buf, format='png')
+    plt.close(fig)
+    return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
 
 def execute_code(code):
-    # Clean the code
-    if "```python" in code:
-        code = code.split("```python")[1].split("```")[0]
-    elif "```" in code:
-        code = code.split("```")[1].split("```")[0]
-    
+    if "```" in code:
+        code = code.split("```")[1]
     code = code.strip()
-    
-    globals_dict = {
+    globs = {
         'requests': requests, 'json': json, 'base64': base64, 'io': io, 're': re,
         'range': range, 'len': len, 'str': str, 'int': int, 'float': float, 'list': list,
         'dict': dict, 'sum': sum, 'max': max, 'min': min, 'sorted': sorted, 'enumerate': enumerate,
         'math': math, 'simple_plot_to_base64': simple_plot_to_base64
     }
-    
-    locals_dict = {}
-    
     try:
-        exec(code, globals_dict, locals_dict)
-        result = locals_dict.get('result', 'No result variable found')
-        return result
+        exec(code, globs)
+        return jsonify(globs.get('result', {"error": "No result variable found"}))
     except Exception as e:
-        # Return a generic error message instead of code
-        return f"Error: {str(e)}"
+        return jsonify({"error": str(e)})
 
 @app.route('/')
 def home():
@@ -109,52 +73,42 @@ def analyze():
     try:
         if request.is_json:
             task = request.get_json().get('task', '')
+        elif 'file' in request.files:
+            task = request.files['file'].read().decode('utf-8')
         else:
-            if 'file' in request.files:
-                task = request.files['file'].read().decode('utf-8')
-            else:
-                task = request.get_data(as_text=True)
-        
+            task = request.get_data(as_text=True)
+
         if not task.strip():
-            return "Error: No task provided"
-        
-        code = call_llm(f"""Task: {task}
+            return jsonify({"error": "No task provided"})
 
-Write Python code. Available: requests, json, base64, io, re, math, simple_plot_to_base64
+        prompt = f"""Task: {task}
 
-For web scraping: 
-- Use requests.get(url, headers={{'User-Agent': 'Mozilla/5.0'}})
-- Use multiple regex patterns or string splitting for data extraction
-- Always check if regex matches exist before using .group()
-- Handle missing data gracefully
+Write Python code. Use: requests, json, base64, io, re, math, simple_plot_to_base64
 
-For correlation: 
+Web scraping: use requests.get(url, headers={{'User-Agent': 'Mozilla/5.0'}})
+Check if regex match exists before .group(), handle missing data.
+
+Correlation:
 def correlation(x, y):
     n = len(x)
     if n < 2: return 0
-    sum_x = sum(x)
-    sum_y = sum(y) 
+    sum_x, sum_y = sum(x), sum(y)
     sum_xy = sum(a*b for a,b in zip(x,y))
     sum_x2 = sum(a*a for a in x)
     sum_y2 = sum(b*b for b in y)
     num = n*sum_xy - sum_x*sum_y
-    den = ((n*sum_x2 - sum_x*sum_x) * (n*sum_y2 - sum_y*sum_y))**0.5
-    return num/den if den != 0 else 0
+    den = ((n*sum_x2 - sum_x*sum_x)*(n*sum_y2 - sum_y*sum_y))**0.5
+    return num/den if den else 0
 
-For plots: simple_plot_to_base64(x_data, y_data, "Title", "X", "Y", regression=True)
+Plots: simple_plot_to_base64(x, y, 'Title', 'X', 'Y', regression=True)
 
-Important: Check for None/empty results, use try/except, handle errors
-End with: result = [answer1, answer2, answer3, plot_base64]
+End with: result = [answer1, answer2, plot_base64]
+Only Python code:"""
 
-Only Python code:""")
-
-        result = execute_code(code)
-        
-        # Always return the result directly, no JSON wrapping
-        return result
-        
+        code = call_llm(prompt)
+        return execute_code(code)
     except Exception as e:
-        return f"Error: {str(e)}"
+        return jsonify({"error": str(e)})
 
 if __name__ == '__main__':
     app.run(debug=True)

@@ -49,49 +49,6 @@ Before deploying, you need to set up the following environment variables:
 - `OPENAI_API_KEY`: Your AI Pipe Token
 - `OPENAI_BASE_URL`: `https://aipipe.org/openai/v1`
 
-## Sample Response
-
-```json
-{
-  "status": "success",
-  "timestamp": "2024-08-04T10:30:00.000Z",
-  "task": "Analyze sales performance data",
-  "analysis_plan": {
-    "data_requirements": "Sales transaction data",
-    "analysis_type": "descriptive",
-    "steps": ["Load data", "Statistical analysis", "Trend analysis", "Visualization"],
-    "visualization_needs": ["Time series plots", "Distribution charts"],
-    "expected_output": "Sales performance insights with recommendations"
-  },
-  "result": {
-    "data_summary": {
-      "shape": [100, 4],
-      "columns": ["date", "sales", "profit", "customers"],
-      "dtypes": {...},
-      "missing_values": {...}
-    },
-    "statistical_analysis": {
-      "sales": {
-        "mean": 1000.5,
-        "median": 995.2,
-        "std": 201.3,
-        "min": 580.1,
-        "max": 1450.8
-      }
-    },
-    "visualizations": [
-      {
-        "type": "histogram",
-        "title": "Distribution of sales",
-        "image": "base64_encoded_image_data"
-      }
-    ],
-    "insights": "Key findings from the analysis...",
-    "recommendations": "Actionable recommendations..."
-  }
-}
-```
-
 ## Local Development
 
 1. **Install dependencies:**
@@ -128,27 +85,6 @@ Your application will be available at `http://localhost:3000`.
    ```bash
    vercel --prod
    ```
-
-## Usage Examples
-
-### Example 1: Sales Analysis
-```bash
-echo "Analyze sales performance for Q4 2023. Identify trends, seasonal patterns, and provide recommendations for Q1 2024." > question.txt
-curl -X POST https://data-analyst-agent-tds.vercel.app/api -F "file=@question.txt"
-```
-
-### Example 2: Customer Behavior Analysis
-```bash
-curl -X POST https://data-analyst-agent-tds.vercel.app/api \
-  -H "Content-Type: application/json" \
-  -d '{"task": "Analyze customer behavior patterns, segment customers, and recommend personalization strategies"}'
-```
-
-### Example 3: Financial Performance
-```bash
-curl -X POST https://data-analyst-agent-tds.vercel.app/api \
-  -d "Evaluate financial performance metrics, identify cost optimization opportunities, and forecast revenue growth"
-```
 
 ## Architecture
 
