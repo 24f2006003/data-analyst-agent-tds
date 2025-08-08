@@ -2,6 +2,7 @@
 *.log
 *.pyc
 __pycache__
+question.txt
 
 # Environments 
 .env 
@@ -12,3 +13,5 @@ ENV/
 env.bak/ 
 venv.bak/ 
 .vscode
+
+app.py
